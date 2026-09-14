@@ -36,6 +36,10 @@ fn dump_process_info(label: &str) {
 }
 
 pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Result<()> {
+    // Stage the daemon while the loader still has its original credentials
+    // and SELinux context. A late-loaded module can change both before the
+    // normal install path gets a chance to copy the executable.
+    utils::stage_daemon().context("Failed to stage ksud before late load")?;
     utils::daemonize(false)?;
     info!("late-load command triggered!");
     dump_process_info("late-load start");
@@ -79,7 +83,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
         warn!("clear temp configs failed: {e}");
     }
 
-    utils::install(None).context("Failed to install ksud")?;
+    utils::finish_install(None).context("Failed to finish ksud installation")?;
 
     // 5. Handle module updates
     if let Err(e) = handle_updated_modules() {

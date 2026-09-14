@@ -35,4 +35,36 @@ config KSU_DISABLE_POLICY
 	  Escalation will always use the default full root profile, and
 	  non-root handling will follow the global umount policy only.
 
+config KSU_SAMSUNG_KDP
+	bool "Samsung KDP credential support"
+	depends on KSU && ARM64
+	default n
+	help
+	  Install credentials through Samsung KDP read-only credential and PGD
+	  interfaces. Initialization fails closed if required symbols are absent.
+
+config KSU_SAMSUNG_RKP
+	bool "Samsung RKP-safe syscall hooks"
+	depends on KSU && ARM64 && KPROBES
+	default n
+	help
+	  Fall back to address-based kprobes when RKP prevents syscall-table
+	  patching. Initialization fails if neither hook path is available.
+
+config KSU_SAMSUNG_DEFEX
+	bool "Samsung DEFEX synchronization"
+	depends on KSU && ARM64 && KPROBES
+	default n
+	help
+	  Synchronize DEFEX credential state and bypass enforcement only for a
+	  current task already running as root in the KernelSU SELinux domain.
+
+config KSU_SAMSUNG_NO_PATCH_TEXT
+	bool "Forbid direct kernel text and read-only memory patching"
+	depends on KSU && ARM64
+	default n
+	help
+	  Make direct patch-memory requests fail. Intended for Samsung kernels
+	  protected by RKP, together with the Samsung RKP hook fallback.
+
 endmenu
