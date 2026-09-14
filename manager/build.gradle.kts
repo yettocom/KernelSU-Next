@@ -48,13 +48,14 @@ fun getGitDescribe(): String {
 }
 
 fun getVersionCode(): Int {
+    System.getenv("KSU_VERSION_CODE")?.toIntOrNull()?.let { return it }
     val commitCount = getGitCommitCount()
     val major = 1
     return major * 30000 + commitCount
 }
 
 fun getVersionName(): String {
-    return getGitDescribe()
+    return System.getenv("KSU_VERSION_NAME") ?: getGitDescribe().trimStart('v')
 }
 
 subprojects {

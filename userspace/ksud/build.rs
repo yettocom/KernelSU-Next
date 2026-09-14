@@ -15,7 +15,10 @@ fn get_git_version() -> Result<(u32, String), std::io::Error> {
         .trim()
         .parse()
         .map_err(|_| std::io::Error::other("Failed to parse git count"))?;
-    let version_code = 30000 + version_code;
+    let version_code = env::var("KSU_VERSION_CODE")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(30000 + version_code);
 
     let version_name = String::from_utf8(
         Command::new("git")
@@ -24,7 +27,8 @@ fn get_git_version() -> Result<(u32, String), std::io::Error> {
             .stdout,
     )
     .map_err(|_| std::io::Error::other("Failed to read git describe stdout"))?;
-    let version_name = version_name.trim_start_matches('v').to_string();
+    let version_name = env::var("KSU_VERSION_NAME")
+        .unwrap_or_else(|_| version_name.trim_start_matches('v').to_string());
     Ok((version_code, version_name))
 }
 
