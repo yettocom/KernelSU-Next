@@ -191,7 +191,16 @@ fn link_ksud_to_bin() -> Result<()> {
 
 pub fn stage_daemon() -> Result<()> {
     ensure_dir_exists(defs::ADB_DIR)?;
-    let current_exe = std::env::current_exe().context("Failed to get self exe path")?;
+    // Samsung late-load helpers may bind-mount the downloaded ksud over
+    // /system/bin/logcat before exec'ing it, so current_exe() can point at
+    // that read-only bind mount. Prefer the helper's pre-staged copy when
+    // it exists; normal installs keep the previous behavior.
+    let pre_staged = PathBuf::from("/data/local/tmp/.ksud-stage");
+    let current_exe = if pre_staged.is_file() {
+        pre_staged
+    } else {
+        std::env::current_exe().context("Failed to get self exe path")?
+    };
     let daemon = PathBuf::from(defs::DAEMON_PATH);
     if current_exe == daemon {
         return Ok(());
