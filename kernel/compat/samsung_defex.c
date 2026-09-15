@@ -3,12 +3,19 @@
 #include <linux/kprobes.h>
 #include <linux/sched.h>
 
+#include "arch.h"
 #include "compat/samsung_defex.h"
 #include "infra/symbol_resolver.h"
 #include "klog.h"
 #include "selinux/selinux.h"
 
 #ifdef CONFIG_KSU_SAMSUNG_DEFEX
+/* Id reported to DEFEX for tasks KSU has already rooted: DEFEX keeps its own
+ * credential copy and must not observe uid 0 there. 1 is never a valid
+ * application uid.
+ */
+#define SAMSUNG_DEFEX_HIDDEN_ID 1u
+
 typedef void (*defex_get_task_creds_t)(struct task_struct *task, unsigned int *uid,
 				       unsigned int *fsuid, unsigned int *egid,
 				       unsigned short *cred_flags);
@@ -22,11 +29,14 @@ static bool defex_enforce_hooked;
 
 static int ksu_samsung_defex_pre_handler(struct kprobe *probe, struct pt_regs *regs)
 {
-	struct task_struct *task = (struct task_struct *)regs->regs[0];
+	struct task_struct *task = (struct task_struct *)PT_REGS_PARM1(regs);
 
 	(void)probe;
+	/* Clearing the first argument (the task) makes task_defex_enforce() bail
+	 * out early, which is what lets our own root tasks keep running.
+	 */
 	if (task == current && current_uid().val == 0 && is_ksu_domain())
-		regs->regs[0] = 0;
+		PT_REGS_PARM1(regs) = 0;
 
 	return 0;
 }
@@ -77,27 +87,30 @@ void ksu_samsung_defex_sync_current(void)
 {
 #ifdef CONFIG_KSU_SAMSUNG_DEFEX
 	const struct cred *cred = current_cred();
-	unsigned int stored_uid;
-	unsigned int stored_fsuid;
-	unsigned int stored_egid;
+	unsigned int report_uid;
+	unsigned int report_fsuid;
+	unsigned int report_egid;
 	unsigned short cred_flags;
 	int ret;
 
-	defex_get_task_creds(current, &stored_uid, &stored_fsuid, &stored_egid,
+	/* Only cred_flags is consumed from DEFEX here: the ids are recomputed
+	 * from the live credential below, so the id out-parameters are scratch.
+	 */
+	defex_get_task_creds(current, &report_uid, &report_fsuid, &report_egid,
 			     &cred_flags);
 
 	if (__kuid_val(cred->euid) == 0 && __kuid_val(cred->fsuid) == 0 &&
 	    __kgid_val(cred->egid) == 0) {
-		stored_uid = 1;
-		stored_fsuid = 1;
-		stored_egid = 1;
+		report_uid = SAMSUNG_DEFEX_HIDDEN_ID;
+		report_fsuid = SAMSUNG_DEFEX_HIDDEN_ID;
+		report_egid = SAMSUNG_DEFEX_HIDDEN_ID;
 	} else {
-		stored_uid = __kuid_val(cred->euid);
-		stored_fsuid = __kuid_val(cred->fsuid);
-		stored_egid = __kgid_val(cred->egid);
+		report_uid = __kuid_val(cred->euid);
+		report_fsuid = __kuid_val(cred->fsuid);
+		report_egid = __kgid_val(cred->egid);
 	}
 
-	ret = defex_set_task_creds(current, stored_uid, stored_fsuid, stored_egid,
+	ret = defex_set_task_creds(current, report_uid, report_fsuid, report_egid,
 				   cred_flags);
 	if (ret)
 		pr_err("Samsung DEFEX credential synchronization failed: %d\n", ret);
