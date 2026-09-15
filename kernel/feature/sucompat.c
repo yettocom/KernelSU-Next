@@ -274,7 +274,7 @@ void __init ksu_sucompat_init()
 	}
 }
 
-void ksu_sucompat_exit()
+void ksu_sucompat_exit(void)
 {
 	ksu_unregister_feature_handler(KSU_FEATURE_SU_COMPAT);
 }

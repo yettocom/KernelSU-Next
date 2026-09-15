@@ -652,11 +652,11 @@ void __init ksu_ksud_init()
 
     ret = ksu_syscall_table_hook(__NR_read, ksu_sys_read, &orig_sys_read);
     if (ret)
-        pr_warn("ksud: __NR_read hook not installed: %d (init.rc injection unavailable)\n", ret);
+	pr_warn("ksud: __NR_read hook not installed: %d (init.rc injection unavailable)\n", ret);
 
     ret = ksu_syscall_table_hook(__NR_fstat, ksu_sys_fstat, &orig_sys_fstat);
     if (ret)
-        pr_warn("ksud: __NR_fstat hook not installed: %d (init.rc injection unavailable)\n", ret);
+	pr_warn("ksud: __NR_fstat hook not installed: %d (init.rc injection unavailable)\n", ret);
 
     ret = register_kprobe(&input_event_kp);
     pr_info("ksud: input_event_kp: %d\n", ret);

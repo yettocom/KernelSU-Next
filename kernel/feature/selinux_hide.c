@@ -337,7 +337,7 @@ static bool sel_hide_guard_enter(void)
     void *old;
 
     if (xa_load(&sel_hide_guard_xa, (unsigned long)current))
-        return false;
+	return false;
     old = xa_store(&sel_hide_guard_xa, (unsigned long)current, current, GFP_KERNEL);
     return !IS_ERR(old);
 }
@@ -381,7 +381,7 @@ static int __nocfi sel_hide_setprocattr_tramp(const char *name, void *value, siz
 static int sel_hide_status_open_pre(struct kprobe *p, struct pt_regs *regs)
 {
     if (!sel_hide_guard_enter())
-        return 0;
+	return 0;
     instruction_pointer_set(regs, (unsigned long)sel_hide_status_open_tramp);
     return 1;
 }
@@ -391,7 +391,7 @@ static int sel_hide_status_open_pre(struct kprobe *p, struct pt_regs *regs)
 static int sel_hide_context_write_pre(struct kprobe *p, struct pt_regs *regs)
 {
     if (!ksu_selinux_hide_enabled || !sel_hide_guard_enter())
-        return 0;
+	return 0;
     instruction_pointer_set(regs, (unsigned long)sel_hide_write_context_tramp);
     return 1;
 }
@@ -399,7 +399,7 @@ static int sel_hide_context_write_pre(struct kprobe *p, struct pt_regs *regs)
 static int sel_hide_access_write_pre(struct kprobe *p, struct pt_regs *regs)
 {
     if (!ksu_selinux_hide_enabled || !sel_hide_guard_enter())
-        return 0;
+	return 0;
     instruction_pointer_set(regs, (unsigned long)sel_hide_write_access_tramp);
     return 1;
 }
@@ -407,7 +407,7 @@ static int sel_hide_access_write_pre(struct kprobe *p, struct pt_regs *regs)
 static int sel_hide_setprocattr_pre(struct kprobe *p, struct pt_regs *regs)
 {
     if (!ksu_selinux_hide_enabled || !sel_hide_guard_enter())
-        return 0;
+	return 0;
     instruction_pointer_set(regs, (unsigned long)sel_hide_setprocattr_tramp);
     return 1;
 }
@@ -442,14 +442,14 @@ static int sel_hide_register_probe(struct kprobe *kp, void *target)
     kp->addr = (kprobe_opcode_t *)target;
     ret = register_kprobe(kp);
     if (ret == -EINVAL && kallsyms_lookup((unsigned long)target, NULL, NULL, NULL, namebuf)) {
-        pr_warn("selinux_hide: addr-based kprobe on %s rejected (%d), retrying symbol-based\n", namebuf, ret);
-        kp->addr = NULL;
-        kp->symbol_name = namebuf;
-        ret = register_kprobe(kp);
-        kp->symbol_name = NULL;
+	pr_warn("selinux_hide: addr-based kprobe on %s rejected (%d), retrying symbol-based\n", namebuf, ret);
+	kp->addr = NULL;
+	kp->symbol_name = namebuf;
+	ret = register_kprobe(kp);
+	kp->symbol_name = NULL;
     }
     if (ret)
-        kp->addr = NULL;
+	kp->addr = NULL;
     return ret;
 }
 #endif
@@ -497,24 +497,24 @@ static int ksu_selinux_hide_enable()
     // handler directly and feed it to the replacement through hook->original.
     selinux_setprocattr_hook.original = (void *)find_kernel_symbol_exact("selinux_setprocattr");
     if (!selinux_setprocattr_hook.original) {
-        pr_err("selinux_hide: selinux_setprocattr not found!\n");
-        goto unhook;
+	pr_err("selinux_hide: selinux_setprocattr not found!\n");
+	goto unhook;
     }
 
     ret = sel_hide_register_probe(&sel_hide_context_write_kprobe, orig_context_write);
     if (ret) {
-        pr_err("selinux_hide: register context_write kprobe err: %d\n", ret);
-        goto unhook;
+	pr_err("selinux_hide: register context_write kprobe err: %d\n", ret);
+	goto unhook;
     }
     ret = sel_hide_register_probe(&sel_hide_access_write_kprobe, orig_access_write);
     if (ret) {
-        pr_err("selinux_hide: register access_write kprobe err: %d\n", ret);
-        goto unregister_context;
+	pr_err("selinux_hide: register access_write kprobe err: %d\n", ret);
+	goto unregister_context;
     }
     ret = sel_hide_register_probe(&sel_hide_setprocattr_kprobe, selinux_setprocattr_hook.original);
     if (ret) {
-        pr_err("selinux_hide: register setprocattr kprobe err: %d\n", ret);
-        goto unregister_access;
+	pr_err("selinux_hide: register setprocattr kprobe err: %d\n", ret);
+	goto unregister_access;
     }
 
     pr_info("selinux_hide: kprobe hooks registered\n");
@@ -533,7 +533,7 @@ unhook:
     ret = ksu_patch_text(context_write, &my, sizeof(my), KSU_PATCH_TEXT_FLUSH_DCACHE);
     if (ret) {
         pr_err("selinux_hide: init: patch_text context_write err: %d\n", ret);
-        goto unhook_no_patch;
+	goto unhook_no_patch;
     }
 
     orig_access_write = *access_write;
@@ -541,13 +541,13 @@ unhook:
     ret = ksu_patch_text(access_write, &my, sizeof(my), KSU_PATCH_TEXT_FLUSH_DCACHE);
     if (ret) {
         pr_err("selinux_hide: init: patch_text access_write err: %d\n", ret);
-        goto unhook_no_patch;
+	goto unhook_no_patch;
     }
 
     ret = ksu_lsm_hook(&selinux_setprocattr_hook);
     if (ret) {
         pr_err("selinux_hide: init: selinux_setprocattr_hook err: %d\n", ret);
-        goto unhook_no_patch;
+	goto unhook_no_patch;
     }
 
     return 0;
@@ -562,23 +562,23 @@ static void ksu_selinux_hide_unhook()
 {
 #ifdef CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT
     if (sel_hide_context_write_kprobe.addr) {
-        unregister_kprobe(&sel_hide_context_write_kprobe);
-        sel_hide_context_write_kprobe.addr = NULL;
-        orig_context_write = NULL;
+	unregister_kprobe(&sel_hide_context_write_kprobe);
+	sel_hide_context_write_kprobe.addr = NULL;
+	orig_context_write = NULL;
     }
     if (sel_hide_access_write_kprobe.addr) {
-        unregister_kprobe(&sel_hide_access_write_kprobe);
-        sel_hide_access_write_kprobe.addr = NULL;
-        orig_access_write = NULL;
+	unregister_kprobe(&sel_hide_access_write_kprobe);
+	sel_hide_access_write_kprobe.addr = NULL;
+	orig_access_write = NULL;
     }
     if (sel_hide_setprocattr_kprobe.addr) {
-        unregister_kprobe(&sel_hide_setprocattr_kprobe);
-        sel_hide_setprocattr_kprobe.addr = NULL;
+	unregister_kprobe(&sel_hide_setprocattr_kprobe);
+	sel_hide_setprocattr_kprobe.addr = NULL;
     }
     if (sel_hide_status_open_kprobe.addr) {
-        unregister_kprobe(&sel_hide_status_open_kprobe);
-        sel_hide_status_open_kprobe.addr = NULL;
-        orig_sel_open_handle_status = NULL;
+	unregister_kprobe(&sel_hide_status_open_kprobe);
+	sel_hide_status_open_kprobe.addr = NULL;
+	orig_sel_open_handle_status = NULL;
     }
     return;
 #endif
@@ -688,14 +688,14 @@ static void hook_selinux_status_open()
 #ifdef CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT
     orig_sel_open_handle_status = READ_ONCE(*sel_open_handle_status_slot);
     if (!orig_sel_open_handle_status) {
-        pr_err("selinux_hide: sel_handle_status_ops open is NULL, fake status will not work\n");
-        return;
+	pr_err("selinux_hide: sel_handle_status_ops open is NULL, fake status will not work\n");
+	return;
     }
     ret = sel_hide_register_probe(&sel_hide_status_open_kprobe, orig_sel_open_handle_status);
     if (ret) {
-        pr_err("selinux_hide: init: kprobe sel_open_handle_status err: %d\n", ret);
-        sel_hide_status_open_kprobe.addr = NULL;
-        orig_sel_open_handle_status = NULL;
+	pr_err("selinux_hide: init: kprobe sel_open_handle_status err: %d\n", ret);
+	sel_hide_status_open_kprobe.addr = NULL;
+	orig_sel_open_handle_status = NULL;
     }
     return;
 #endif

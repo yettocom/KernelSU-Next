@@ -43,12 +43,12 @@ static bool samsung_sucompat_should_redirect(int syscall_nr)
     struct pt_regs *syscall_regs = task_pt_regs(current);
 
     if (unlikely(syscall_regs->syscallno == SAMSUNG_SUCOMPAT_BYPASS_NR)) {
-        syscall_regs->syscallno = syscall_nr;
-        return false;
+	syscall_regs->syscallno = syscall_nr;
+	return false;
     }
 
     return ksu_su_compat_enabled &&
-           ksu_is_allow_uid_for_current(current_uid().val);
+	   ksu_is_allow_uid_for_current(current_uid().val);
 }
 
 /* One kprobe per syscall entry. The pre-handler redirects execution to the
@@ -181,22 +181,22 @@ static int setresuid_return_handler(struct kretprobe_instance *ri, struct pt_reg
     uid_t new_uid;
 
     if (regs_return_value(regs) < 0)
-        return 0;
+	return 0;
 
     new_uid = current_uid().val;
     if (old_uid == new_uid)
-        return 0;
+	return 0;
 
     work = kzalloc(sizeof(*work), GFP_ATOMIC);
     if (!work)
-        return 0;
+	return 0;
 
     work->old_uid = old_uid;
     work->new_uid = new_uid;
     work->callback.func = setresuid_task_work_func;
 
     if (task_work_add(current, &work->callback, TWA_RESUME))
-        kfree(work);
+	kfree(work);
 
     return 0;
 }
@@ -213,8 +213,8 @@ static int samsung_setresuid_hook_init(void)
     int ret = register_kretprobe(&setresuid_kretprobe);
 
     if (ret) {
-        pr_err("hook_manager: Samsung setresuid kretprobe failed: %d\n", ret);
-        return ret;
+	pr_err("hook_manager: Samsung setresuid kretprobe failed: %d\n", ret);
+	return ret;
     }
 
     setresuid_kretprobe_registered = true;
@@ -226,7 +226,7 @@ static int samsung_setresuid_hook_init(void)
 static void samsung_setresuid_hook_exit(void)
 {
     if (!setresuid_kretprobe_registered)
-        return;
+	return;
 
     unregister_kretprobe(&setresuid_kretprobe);
     setresuid_kretprobe_registered = false;
