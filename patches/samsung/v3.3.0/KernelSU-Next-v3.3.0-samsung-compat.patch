@@ -1458,6 +1458,52 @@ index 88c79568..673e9e15 100644
 +	}
 +	ksu_samsung_defex_sync_current();
  }
+diff --git a/manager/build.gradle.kts b/manager/build.gradle.kts
+index 56f21ef7..0634fad0 100644
+--- a/manager/build.gradle.kts
++++ b/manager/build.gradle.kts
+@@ -48,13 +48,14 @@ fun getGitDescribe(): String {
+ }
+ 
+ fun getVersionCode(): Int {
++    System.getenv("KSU_VERSION_CODE")?.toIntOrNull()?.let { return it }
+     val commitCount = getGitCommitCount()
+     val major = 1
+     return major * 30000 + commitCount
+ }
+ 
+ fun getVersionName(): String {
+-    return getGitDescribe()
++    return System.getenv("KSU_VERSION_NAME") ?: getGitDescribe().trimStart('v')
+ }
+ 
+ subprojects {
+diff --git a/userspace/ksud/build.rs b/userspace/ksud/build.rs
+index 9f881966..3a0772f7 100644
+--- a/userspace/ksud/build.rs
++++ b/userspace/ksud/build.rs
+@@ -15,7 +15,10 @@ fn get_git_version() -> Result<(u32, String), std::io::Error> {
+         .trim()
+         .parse()
+         .map_err(|_| std::io::Error::other("Failed to parse git count"))?;
+-    let version_code = 30000 + version_code;
++    let version_code = env::var("KSU_VERSION_CODE")
++        .ok()
++        .and_then(|value| value.parse::<u32>().ok())
++        .unwrap_or(30000 + version_code);
+ 
+     let version_name = String::from_utf8(
+         Command::new("git")
+@@ -24,7 +27,8 @@ fn get_git_version() -> Result<(u32, String), std::io::Error> {
+             .stdout,
+     )
+     .map_err(|_| std::io::Error::other("Failed to read git describe stdout"))?;
+-    let version_name = version_name.trim_start_matches('v').to_string();
++    let version_name = env::var("KSU_VERSION_NAME")
++        .unwrap_or_else(|_| version_name.trim_start_matches('v').to_string());
+     Ok((version_code, version_name))
+ }
+ 
 diff --git a/userspace/ksud/src/late_load.rs b/userspace/ksud/src/late_load.rs
 index e8b34d3d..25a7ad23 100644
 --- a/userspace/ksud/src/late_load.rs
@@ -1483,10 +1529,10 @@ index e8b34d3d..25a7ad23 100644
      // 5. Handle module updates
      if let Err(e) = handle_updated_modules() {
 diff --git a/userspace/ksud/src/utils.rs b/userspace/ksud/src/utils.rs
-index a43f1bc8..9db95645 100644
+index a43f1bc8..049ee1d7 100644
 --- a/userspace/ksud/src/utils.rs
 +++ b/userspace/ksud/src/utils.rs
-@@ -189,13 +189,37 @@ fn link_ksud_to_bin() -> Result<()> {
+@@ -189,13 +189,46 @@ fn link_ksud_to_bin() -> Result<()> {
      Ok(())
  }
  
@@ -1498,7 +1544,16 @@ index a43f1bc8..9db95645 100644
 -        std::env::current_exe().with_context(|| "Failed to get self exe path")?,
 -        defs::DAEMON_PATH,
 -    )?;
-+    let current_exe = std::env::current_exe().context("Failed to get self exe path")?;
++    // Samsung late-load helpers may bind-mount the downloaded ksud over
++    // /system/bin/logcat before exec'ing it, so current_exe() can point at
++    // that read-only bind mount. Prefer the helper's pre-staged copy when
++    // it exists; normal installs keep the previous behavior.
++    let pre_staged = PathBuf::from("/data/local/tmp/.ksud-stage");
++    let current_exe = if pre_staged.is_file() {
++        pre_staged
++    } else {
++        std::env::current_exe().context("Failed to get self exe path")?
++    };
 +    let daemon = PathBuf::from(defs::DAEMON_PATH);
 +    if current_exe == daemon {
 +        return Ok(());
@@ -1530,7 +1585,7 @@ index a43f1bc8..9db95645 100644
      restorecon::lsetfilecon(defs::DAEMON_PATH, restorecon::KSU_CON)?;
      // install binary assets
      assets::ensure_binaries(false).with_context(|| "Failed to extract assets")?;
-@@ -211,6 +235,11 @@ pub fn install(libadbroot: Option<PathBuf>) -> Result<()> {
+@@ -211,6 +244,11 @@ pub fn install(libadbroot: Option<PathBuf>) -> Result<()> {
      Ok(())
  }
  
