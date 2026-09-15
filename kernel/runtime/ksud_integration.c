@@ -21,6 +21,7 @@
 #include <linux/stat.h>
 
 #include "arch.h"
+#include "exec_args.h"
 #include "klog.h" // IWYU pragma: keep
 #include "ksu.h"
 #include "runtime/ksud.h"
@@ -545,18 +546,16 @@ static void ksu_execve_hook_ksud_common(const char __user *filename_user, const 
 
 void ksu_execve_hook_ksud(const struct pt_regs *regs)
 {
-    const char __user *filename_user = (const char __user *)PT_REGS_PARM1(regs);
-    const char __user *const __user *argv_user = (const char __user *const __user *)PT_REGS_PARM2(regs);
+    const struct exec_args args = ksu_exec_args_from_regs(regs, false);
 
-    ksu_execve_hook_ksud_common(filename_user, argv_user);
+    ksu_execve_hook_ksud_common(args.filename, args.argv);
 }
 
 void ksu_execveat_hook_ksud(const struct pt_regs *regs)
 {
-    const char __user *filename_user = (const char __user *)PT_REGS_PARM2(regs);
-    const char __user *const __user *argv_user = (const char __user *const __user *)PT_REGS_PARM3(regs);
+    const struct exec_args args = ksu_exec_args_from_regs(regs, true);
 
-    ksu_execve_hook_ksud_common(filename_user, argv_user);
+    ksu_execve_hook_ksud_common(args.filename, args.argv);
 }
 
 static long (*orig_sys_read)(const struct pt_regs *regs);
