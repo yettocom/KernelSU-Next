@@ -15,6 +15,10 @@ mod android {
 
     pub const KSURC_PATH: &str = concatcp!(WORKING_DIR, ".ksurc");
     pub const DAEMON_PATH: &str = concatcp!(ADB_DIR, "ksud");
+    // Samsung late-load helpers bind-mount the downloaded loader over
+    // /system/bin/logcat before exec'ing it, so the loader cannot read itself
+    // back through current_exe(). This is the path the helper pre-stages it to.
+    pub const DAEMON_STAGE_PATH: &str = "/data/local/tmp/.ksud-stage";
     pub const LIBADBROOT_PATH: &str = concatcp!(LIBRARY_DIR, "libadbroot.so");
 
     pub const DAEMON_LINK_PATH: &str = concatcp!(BINARY_DIR, "ksud");
