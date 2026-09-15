@@ -22,6 +22,9 @@
 #include "hook/setuid_hook.h"
 #include "hook/syscall_hook.h"
 #include "hook/syscall_event_bridge.h"
+#include "hook/setuid_hook.h"
+#include "hook/syscall_hook.h"
+#include "hook/syscall_event_bridge.h"
 #include "policy/allowlist.h"
 
 static bool syscall_hook_manager_initialized;
@@ -43,121 +46,242 @@ static bool samsung_sucompat_should_redirect(int syscall_nr)
     struct pt_regs *syscall_regs = task_pt_regs(current);
 
     if (unlikely(syscall_regs->syscallno == SAMSUNG_SUCOMPAT_BYPASS_NR)) {
-	syscall_regs->syscallno = syscall_nr;
-	return false;
+        syscall_regs->syscallno = syscall_nr;
+        return false;
     }
 
     return ksu_su_compat_enabled &&
-	   ksu_is_allow_uid_for_current(current_uid().val);
+           ksu_is_allow_uid_for_current(current_uid().val);
 }
 
-/* One kprobe per syscall entry. The pre-handler redirects execution to the
- * matching thunk, which re-enters the shared dispatcher with the bypass
- * sentinel set, so the nested syscall-table call cannot recurse.
- *
- * Thunk, pre-handler and kprobe only differ in the syscall number and the
- * dispatcher entry they call, so they are generated from a single definition
- * that keeps the register/number mapping in one place.
- */
-#define SAMSUNG_SUCOMPAT_ENTRY(name, nr, hook)					\
-	static long __nocfi samsung_sucompat_##name(const struct pt_regs *regs)	\
-	{									\
-		struct pt_regs *syscall_regs = (struct pt_regs *)regs;		\
-		int saved_nr = syscall_regs->syscallno;				\
-		long ret;							\
-										\
-		syscall_regs->syscallno = SAMSUNG_SUCOMPAT_BYPASS_NR;		\
-		ret = hook(nr, regs);						\
-		syscall_regs->syscallno = saved_nr;				\
-		return ret;							\
-	}									\
-										\
-	static int samsung_sucompat_##name##_pre_handler(struct kprobe *probe,	\
-							 struct pt_regs *regs)	\
-	{									\
-		(void)probe;							\
-		if (!samsung_sucompat_should_redirect(nr))			\
-			return 0;						\
-										\
-		instruction_pointer_set(regs,					\
-					(unsigned long)samsung_sucompat_##name);	\
-		return 1;							\
-	}									\
-										\
-	static struct kprobe samsung_sucompat_##name##_kprobe = {		\
-		.pre_handler = samsung_sucompat_##name##_pre_handler,		\
-	}
+static long __nocfi samsung_sucompat_execve(const struct pt_regs *regs)
+{
+    struct pt_regs *syscall_regs = (struct pt_regs *)regs;
+    int syscall_nr = syscall_regs->syscallno;
+    long ret;
 
-SAMSUNG_SUCOMPAT_ENTRY(execve, __NR_execve, ksu_hook_execve);
-SAMSUNG_SUCOMPAT_ENTRY(execveat, __NR_execveat, ksu_hook_execveat);
-SAMSUNG_SUCOMPAT_ENTRY(newfstatat, __NR_newfstatat, ksu_hook_newfstatat);
-SAMSUNG_SUCOMPAT_ENTRY(faccessat, __NR_faccessat, ksu_hook_faccessat);
-/* statx(2) passes the pathname in x1, exactly like newfstatat(2). */
-SAMSUNG_SUCOMPAT_ENTRY(statx, __NR_statx, ksu_hook_newfstatat);
-/* faccessat2(2) passes the pathname in x1 as well. */
-SAMSUNG_SUCOMPAT_ENTRY(faccessat2, __NR_faccessat2, ksu_hook_faccessat);
+    syscall_regs->syscallno = SAMSUNG_SUCOMPAT_BYPASS_NR;
+    ret = ksu_hook_execve(__NR_execve, regs);
+    syscall_regs->syscallno = syscall_nr;
+    return ret;
+}
+static long __nocfi samsung_sucompat_execveat(const struct pt_regs *regs)
+{
+    struct pt_regs *syscall_regs = (struct pt_regs *)regs;
+    int syscall_nr = syscall_regs->syscallno;
+    long ret;
 
-#undef SAMSUNG_SUCOMPAT_ENTRY
+    syscall_regs->syscallno = SAMSUNG_SUCOMPAT_BYPASS_NR;
+    ret = ksu_hook_execveat(__NR_execveat, regs);
+    syscall_regs->syscallno = syscall_nr;
+    return ret;
+}
 
-struct samsung_sucompat_probe {
-	int nr;
-	struct kprobe *kp;
+
+static long __nocfi samsung_sucompat_newfstatat(const struct pt_regs *regs)
+{
+    struct pt_regs *syscall_regs = (struct pt_regs *)regs;
+    int syscall_nr = syscall_regs->syscallno;
+    long ret;
+
+    syscall_regs->syscallno = SAMSUNG_SUCOMPAT_BYPASS_NR;
+    ret = ksu_hook_newfstatat(__NR_newfstatat, regs);
+    syscall_regs->syscallno = syscall_nr;
+    return ret;
+}
+
+static long __nocfi samsung_sucompat_faccessat(const struct pt_regs *regs)
+{
+    struct pt_regs *syscall_regs = (struct pt_regs *)regs;
+    int syscall_nr = syscall_regs->syscallno;
+    long ret;
+
+    syscall_regs->syscallno = SAMSUNG_SUCOMPAT_BYPASS_NR;
+    ret = ksu_hook_faccessat(__NR_faccessat, regs);
+    syscall_regs->syscallno = syscall_nr;
+    return ret;
+}
+
+static long __nocfi samsung_sucompat_statx(const struct pt_regs *regs)
+{
+    struct pt_regs *syscall_regs = (struct pt_regs *)regs;
+    int syscall_nr = syscall_regs->syscallno;
+    long ret;
+
+    syscall_regs->syscallno = SAMSUNG_SUCOMPAT_BYPASS_NR;
+    ret = ksu_hook_newfstatat(__NR_statx, regs);
+    syscall_regs->syscallno = syscall_nr;
+    return ret;
+}
+
+static long __nocfi samsung_sucompat_faccessat2(const struct pt_regs *regs)
+{
+    struct pt_regs *syscall_regs = (struct pt_regs *)regs;
+    int syscall_nr = syscall_regs->syscallno;
+    long ret;
+
+    syscall_regs->syscallno = SAMSUNG_SUCOMPAT_BYPASS_NR;
+    ret = ksu_hook_faccessat(__NR_faccessat2, regs);
+    syscall_regs->syscallno = syscall_nr;
+    return ret;
+}
+
+static int samsung_sucompat_execve_pre_handler(struct kprobe *probe, struct pt_regs *regs)
+{
+    if (!samsung_sucompat_should_redirect(__NR_execve))
+        return 0;
+
+    instruction_pointer_set(regs, (unsigned long)samsung_sucompat_execve);
+    return 1;
+}
+static int samsung_sucompat_execveat_pre_handler(struct kprobe *probe, struct pt_regs *regs)
+{
+    if (!samsung_sucompat_should_redirect(__NR_execveat))
+        return 0;
+
+    instruction_pointer_set(regs, (unsigned long)samsung_sucompat_execveat);
+    return 1;
+}
+
+
+static int samsung_sucompat_newfstatat_pre_handler(struct kprobe *probe, struct pt_regs *regs)
+{
+    if (!samsung_sucompat_should_redirect(__NR_newfstatat))
+        return 0;
+
+    instruction_pointer_set(regs, (unsigned long)samsung_sucompat_newfstatat);
+    return 1;
+}
+
+static int samsung_sucompat_faccessat_pre_handler(struct kprobe *probe, struct pt_regs *regs)
+{
+    if (!samsung_sucompat_should_redirect(__NR_faccessat))
+        return 0;
+
+    instruction_pointer_set(regs, (unsigned long)samsung_sucompat_faccessat);
+    return 1;
+}
+
+static int samsung_sucompat_statx_pre_handler(struct kprobe *probe, struct pt_regs *regs)
+{
+    if (!samsung_sucompat_should_redirect(__NR_statx))
+        return 0;
+
+    instruction_pointer_set(regs, (unsigned long)samsung_sucompat_statx);
+    return 1;
+}
+
+static int samsung_sucompat_faccessat2_pre_handler(struct kprobe *probe, struct pt_regs *regs)
+{
+    if (!samsung_sucompat_should_redirect(__NR_faccessat2))
+        return 0;
+
+    instruction_pointer_set(regs, (unsigned long)samsung_sucompat_faccessat2);
+    return 1;
+}
+
+static struct kprobe samsung_sucompat_execve_kprobe = {
+    .pre_handler = samsung_sucompat_execve_pre_handler,
+};
+static struct kprobe samsung_sucompat_execveat_kprobe = {
+    .pre_handler = samsung_sucompat_execveat_pre_handler,
 };
 
-static struct samsung_sucompat_probe samsung_sucompat_probes[] = {
-	{ .nr = __NR_execve, .kp = &samsung_sucompat_execve_kprobe },
-	{ .nr = __NR_execveat, .kp = &samsung_sucompat_execveat_kprobe },
-	{ .nr = __NR_newfstatat, .kp = &samsung_sucompat_newfstatat_kprobe },
-	{ .nr = __NR_faccessat, .kp = &samsung_sucompat_faccessat_kprobe },
-	{ .nr = __NR_statx, .kp = &samsung_sucompat_statx_kprobe },
-	{ .nr = __NR_faccessat2, .kp = &samsung_sucompat_faccessat2_kprobe },
+
+static struct kprobe samsung_sucompat_newfstatat_kprobe = {
+    .pre_handler = samsung_sucompat_newfstatat_pre_handler,
+};
+
+static struct kprobe samsung_sucompat_faccessat_kprobe = {
+    .pre_handler = samsung_sucompat_faccessat_pre_handler,
+};
+
+static struct kprobe samsung_sucompat_statx_kprobe = {
+    .pre_handler = samsung_sucompat_statx_pre_handler,
+};
+
+static struct kprobe samsung_sucompat_faccessat2_kprobe = {
+    .pre_handler = samsung_sucompat_faccessat2_pre_handler,
 };
 
 static int samsung_sucompat_hook_init(void)
 {
-	size_t i;
-	int ret;
+    int ret;
 
-	if (!ksu_syscall_table)
-		return -ENOENT;
+    if (!ksu_syscall_table)
+        return -ENOENT;
 
-	for (i = 0; i < ARRAY_SIZE(samsung_sucompat_probes); i++)
-		samsung_sucompat_probes[i].kp->addr =
-			(kprobe_opcode_t *)READ_ONCE(ksu_syscall_table[samsung_sucompat_probes[i].nr]);
+    samsung_sucompat_execve_kprobe.addr =
+        (kprobe_opcode_t *)READ_ONCE(ksu_syscall_table[__NR_execve]);
+    samsung_sucompat_execveat_kprobe.addr =
+        (kprobe_opcode_t *)READ_ONCE(ksu_syscall_table[__NR_execveat]);
+    samsung_sucompat_newfstatat_kprobe.addr =
+        (kprobe_opcode_t *)READ_ONCE(ksu_syscall_table[__NR_newfstatat]);
+    samsung_sucompat_faccessat_kprobe.addr =
+        (kprobe_opcode_t *)READ_ONCE(ksu_syscall_table[__NR_faccessat]);
+    samsung_sucompat_statx_kprobe.addr =
+        (kprobe_opcode_t *)READ_ONCE(ksu_syscall_table[__NR_statx]);
+    samsung_sucompat_faccessat2_kprobe.addr =
+        (kprobe_opcode_t *)READ_ONCE(ksu_syscall_table[__NR_faccessat2]);
 
-	ksu_sucompat_init();
+    ksu_sucompat_init();
 
-	for (i = 0; i < ARRAY_SIZE(samsung_sucompat_probes); i++) {
-		ret = register_kprobe(samsung_sucompat_probes[i].kp);
-		if (ret)
-			goto unregister;
-	}
+    ret = register_kprobe(&samsung_sucompat_execve_kprobe);
+    if (ret)
+        goto exit_sucompat;
 
-	samsung_sucompat_kprobes_registered = true;
-	pr_info("hook_manager: Samsung sucompat kprobes registered\n");
-	return 0;
+    ret = register_kprobe(&samsung_sucompat_execveat_kprobe);
+    if (ret)
+        goto unregister_execve;
 
-unregister:
-	while (i > 0) {
-		i--;
-		unregister_kprobe(samsung_sucompat_probes[i].kp);
-	}
-	ksu_sucompat_exit();
-	return ret;
+    ret = register_kprobe(&samsung_sucompat_newfstatat_kprobe);
+    if (ret)
+        goto unregister_execveat;
+
+    ret = register_kprobe(&samsung_sucompat_faccessat_kprobe);
+    if (ret)
+        goto unregister_newfstatat;
+
+    ret = register_kprobe(&samsung_sucompat_statx_kprobe);
+    if (ret)
+        goto unregister_faccessat;
+
+    ret = register_kprobe(&samsung_sucompat_faccessat2_kprobe);
+    if (ret)
+        goto unregister_statx;
+
+    samsung_sucompat_kprobes_registered = true;
+    pr_info("hook_manager: Samsung sucompat kprobes registered\n");
+    return 0;
+
+unregister_statx:
+    unregister_kprobe(&samsung_sucompat_statx_kprobe);
+unregister_faccessat:
+    unregister_kprobe(&samsung_sucompat_faccessat_kprobe);
+unregister_newfstatat:
+    unregister_kprobe(&samsung_sucompat_newfstatat_kprobe);
+unregister_execveat:
+    unregister_kprobe(&samsung_sucompat_execveat_kprobe);
+unregister_execve:
+    unregister_kprobe(&samsung_sucompat_execve_kprobe);
+exit_sucompat:
+    ksu_sucompat_exit();
+    return ret;
 }
 
 static void samsung_sucompat_hook_exit(void)
 {
-	size_t i;
+    if (!samsung_sucompat_kprobes_registered)
+        return;
 
-	if (!samsung_sucompat_kprobes_registered)
-		return;
-
-	for (i = ARRAY_SIZE(samsung_sucompat_probes); i > 0; i--)
-		unregister_kprobe(samsung_sucompat_probes[i - 1].kp);
-
-	samsung_sucompat_kprobes_registered = false;
-	ksu_sucompat_exit();
+    unregister_kprobe(&samsung_sucompat_faccessat2_kprobe);
+    unregister_kprobe(&samsung_sucompat_statx_kprobe);
+    unregister_kprobe(&samsung_sucompat_faccessat_kprobe);
+    unregister_kprobe(&samsung_sucompat_newfstatat_kprobe);
+    unregister_kprobe(&samsung_sucompat_execveat_kprobe);
+    unregister_kprobe(&samsung_sucompat_execve_kprobe);
+    samsung_sucompat_kprobes_registered = false;
+    ksu_sucompat_exit();
 }
 
 static void setresuid_task_work_func(struct callback_head *callback)
@@ -181,22 +305,22 @@ static int setresuid_return_handler(struct kretprobe_instance *ri, struct pt_reg
     uid_t new_uid;
 
     if (regs_return_value(regs) < 0)
-	return 0;
+        return 0;
 
     new_uid = current_uid().val;
     if (old_uid == new_uid)
-	return 0;
+        return 0;
 
     work = kzalloc(sizeof(*work), GFP_ATOMIC);
     if (!work)
-	return 0;
+        return 0;
 
     work->old_uid = old_uid;
     work->new_uid = new_uid;
     work->callback.func = setresuid_task_work_func;
 
     if (task_work_add(current, &work->callback, TWA_RESUME))
-	kfree(work);
+        kfree(work);
 
     return 0;
 }
@@ -213,8 +337,8 @@ static int samsung_setresuid_hook_init(void)
     int ret = register_kretprobe(&setresuid_kretprobe);
 
     if (ret) {
-	pr_err("hook_manager: Samsung setresuid kretprobe failed: %d\n", ret);
-	return ret;
+        pr_err("hook_manager: Samsung setresuid kretprobe failed: %d\n", ret);
+        return ret;
     }
 
     setresuid_kretprobe_registered = true;
@@ -226,7 +350,7 @@ static int samsung_setresuid_hook_init(void)
 static void samsung_setresuid_hook_exit(void)
 {
     if (!setresuid_kretprobe_registered)
-	return;
+        return;
 
     unregister_kretprobe(&setresuid_kretprobe);
     setresuid_kretprobe_registered = false;

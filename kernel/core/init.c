@@ -132,12 +132,14 @@ int __init kernelsu_init(void)
 	ksu_cred = prepare_creds();
 	if (!ksu_cred) {
 		pr_err("prepare cred failed!\n");
+		ksu_samsung_kdp_exit();
 		return -ENOSYS;
 	}
 
 	ret = ksu_samsung_defex_init();
 	if (ret) {
 		ksu_put_cred(ksu_cred);
+		ksu_samsung_kdp_exit();
 		return ret;
 	}
 
@@ -236,6 +238,7 @@ void __exit kernelsu_exit(void)
 
 	ksu_samsung_defex_exit();
 	ksu_put_cred(ksu_cred);
+	ksu_samsung_kdp_exit();
 }
 
 #if NEED_OWN_STACKPROTECTOR

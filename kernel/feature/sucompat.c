@@ -16,7 +16,6 @@
 #include <linux/ptrace.h>
 
 #include "arch.h"
-#include "exec_args.h"
 #include "policy/allowlist.h"
 #include "policy/feature.h"
 #include "klog.h" // IWYU pragma: keep
@@ -252,18 +251,14 @@ do_orig_execve:
 
 long ksu_handle_execve_sucompat(const char __user **filename_user, int orig_nr, struct pt_regs *regs)
 {
-	const struct exec_args args = ksu_exec_args_from_regs(regs, false);
-
-	return ksu_handle_execve_sucompat_common(filename_user, args.argv, args.envp,
-						 false, orig_nr, regs);
+	return ksu_handle_execve_sucompat_common(filename_user, (const char __user *const __user *)PT_REGS_PARM2(regs),
+						 PT_REGS_PARM3(regs), false, orig_nr, regs);
 }
 
 long ksu_handle_execveat_sucompat(const char __user **filename_user, int orig_nr, struct pt_regs *regs)
 {
-	const struct exec_args args = ksu_exec_args_from_regs(regs, true);
-
-	return ksu_handle_execve_sucompat_common(filename_user, args.argv, args.envp,
-						 true, orig_nr, regs);
+	return ksu_handle_execve_sucompat_common(filename_user, (const char __user *const __user *)PT_REGS_PARM3(regs),
+						 PT_REGS_SYSCALL_PARM4(regs), true, orig_nr, regs);
 }
 
 // sucompat: permitted process can execute 'su' to gain root access.
@@ -274,7 +269,7 @@ void __init ksu_sucompat_init()
 	}
 }
 
-void ksu_sucompat_exit(void)
+void ksu_sucompat_exit()
 {
 	ksu_unregister_feature_handler(KSU_FEATURE_SU_COMPAT);
 }

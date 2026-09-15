@@ -4,6 +4,7 @@
 #include <linux/cred.h>
 
 int ksu_samsung_kdp_init(void);
+void ksu_samsung_kdp_exit(void);
 int ksu_samsung_kdp_commit_creds(struct cred *cred);
 
 #ifdef CONFIG_KSU_SAMSUNG_KDP

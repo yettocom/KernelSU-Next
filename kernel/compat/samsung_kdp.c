@@ -64,11 +64,11 @@ static void samsung_kdp_commit_worker(struct work_struct *work)
 	struct cred *ro_cred;
 	bool user_changed;
 
-	/* Authorisation happens at the call sites (KSU allowlist plus the escape
-	 * paths); this worker only performs the credential transition it was
-	 * handed. A uid check against current would be meaningless here because
-	 * workqueue callbacks run as kernel threads.
-	 */
+	if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)) {
+		commit_work->result = -EPERM;
+		goto out;
+	}
+
 	target_cred = rcu_access_pointer(target->cred);
 	target_real_cred = rcu_access_pointer(target->real_cred);
 	if (target_cred != old_cred || target_real_cred != old_cred) {
@@ -116,19 +116,19 @@ static void samsung_kdp_commit_worker(struct work_struct *work)
 out:
 	complete(&commit_work->completion);
 }
+#endif
 
-/* Release a credential installed through prepare_ro_creds(): such credentials
- * carry their own usecount and therefore must not be released with put_cred().
- * The non-KDP build uses the plain fallback in ksu_put_cred() (see the header).
- */
 void ksu_samsung_kdp_put_cred(const struct cred *cred)
 {
+#ifdef CONFIG_KSU_SAMSUNG_KDP
 	struct cred *mutable_cred = (struct cred *)cred;
 
 	if (mutable_cred && kdp_usecount_dec_and_test_fn(mutable_cred))
 		__put_cred(mutable_cred);
-}
+#else
+	put_cred(cred);
 #endif
+}
 
 int ksu_samsung_kdp_init(void)
 {
@@ -158,6 +158,10 @@ int ksu_samsung_kdp_init(void)
 	pr_info("Samsung KDP task-scoped credential and native PGD path enabled\n");
 #endif
 	return 0;
+}
+
+void ksu_samsung_kdp_exit(void)
+{
 }
 
 int ksu_samsung_kdp_commit_creds(struct cred *cred)

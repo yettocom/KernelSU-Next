@@ -49,58 +49,45 @@ static int patch_syscall_table(int nr, sys_call_ptr_t fn)
 
 // Direct syscall table patching: overwrite syscall_table[nr] with fn,
 // save original to *old, and record for restoration at module exit.
-// Mirrors the arm64 implementation, including its fail-closed behaviour:
-// a hook that cannot be tracked for restoration is never installed.
-// Returns 0 on success, -ENOENT when the syscall table is unavailable,
-// -EINVAL on an invalid nr, -ENOSPC when the tracking table is full and
-// -EIO when the entry could not be patched.
-int ksu_syscall_table_hook(int nr, sys_call_ptr_t fn, sys_call_ptr_t *old)
+void ksu_syscall_table_hook(int nr, sys_call_ptr_t fn, sys_call_ptr_t *old)
 {
-	int ret;
-	int i;
-	bool found = false;
-	sys_call_ptr_t orig;
+    if (ksu_syscall_table == NULL)
+        return;
+    if (nr < 0 || nr >= __NR_syscalls) {
+        pr_info("invalid nr: %d\n", nr);
+        return;
+    }
 
-	if (ksu_syscall_table == NULL)
-		return -ENOENT;
-	if (nr < 0 || nr >= __NR_syscalls) {
-		pr_info("invalid nr: %d\n", nr);
-		return -EINVAL;
-	}
+    mutex_lock(&hooked_entries_lock);
 
-	mutex_lock(&hooked_entries_lock);
+    sys_call_ptr_t orig = READ_ONCE(ksu_syscall_table[nr]);
+    if (old)
+        *old = orig;
 
-	orig = READ_ONCE(ksu_syscall_table[nr]);
-	if (old)
-		*old = orig;
+    // Record for later restoration
+    int i;
+    bool found = false;
+    for (i = 0; i < hooked_count; i++) {
+        if (hooked_entries[i].nr == nr) {
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        if (hooked_count < ARRAY_SIZE(hooked_entries)) {
+            hooked_entries[hooked_count].nr = nr;
+            hooked_entries[hooked_count].orig = orig;
+            hooked_count++;
+        } else {
+            pr_warn(
+                "hooked_entries full, cannot track syscall %d for restoration\n",
+                nr);
+        }
+    }
 
-	// Record for later restoration
-	for (i = 0; i < hooked_count; i++) {
-		if (hooked_entries[i].nr == nr) {
-			found = true;
-			break;
-		}
-	}
-	if (!found && hooked_count >= ARRAY_SIZE(hooked_entries)) {
-		pr_warn("hooked_entries full, cannot track syscall %d for restoration\n", nr);
-		mutex_unlock(&hooked_entries_lock);
-		return -ENOSPC;
-	}
+    patch_syscall_table(nr, fn);
 
-	ret = patch_syscall_table(nr, fn);
-	if (ret) {
-		mutex_unlock(&hooked_entries_lock);
-		return ret;
-	}
-
-	if (!found) {
-		hooked_entries[hooked_count].nr = nr;
-		hooked_entries[hooked_count].orig = orig;
-		hooked_count++;
-	}
-
-	mutex_unlock(&hooked_entries_lock);
-	return 0;
+    mutex_unlock(&hooked_entries_lock);
 }
 
 // Restore syscall_table[nr] to its original value and remove from tracking list.

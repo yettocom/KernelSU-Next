@@ -60,21 +60,21 @@ int ksu_syscall_table_hook(int nr, syscall_fn_t fn, syscall_fn_t *old)
 		return -EINVAL;
     }
 
-	mutex_lock(&hooked_entries_lock);
+    mutex_lock(&hooked_entries_lock);
 
-	syscall_fn_t orig = READ_ONCE(ksu_syscall_table[nr]);
-	if (old)
-		*old = orig;
+    syscall_fn_t orig = READ_ONCE(ksu_syscall_table[nr]);
+    if (old)
+        *old = orig;
 
-	// Record for later restoration
-	int i;
-	bool found = false;
-	for (i = 0; i < hooked_count; i++) {
-		if (hooked_entries[i].nr == nr) {
-			found = true;
-			break;
-		}
-	}
+    // Record for later restoration
+    int i;
+    bool found = false;
+    for (i = 0; i < hooked_count; i++) {
+        if (hooked_entries[i].nr == nr) {
+            found = true;
+            break;
+        }
+    }
 	if (!found && hooked_count >= ARRAY_SIZE(hooked_entries)) {
 		pr_warn("hooked_entries full, cannot track syscall %d for restoration\n", nr);
 		mutex_unlock(&hooked_entries_lock);

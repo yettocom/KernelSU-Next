@@ -28,16 +28,4 @@ KSU_VERSION=33214
 KSU_VERSION_CODE=33214
 KSU_VERSION_NAME=3.3.0
 
-Runtime contract for the late-load flow:
-
-- The loader is started through the vendor helper, which bind-mounts it over
-  /system/bin/logcat before exec'ing it. DEFEX refuses to read that path back,
-  so the helper (or the deployment script) must pre-stage the daemon at
-  /data/local/tmp/.ksud-stage; ksud prefers that copy and only falls back to
-  current_exe() when it is absent.
-- With CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT=y all kernel text patching is refused
-  on purpose, so the __NR_read/__NR_fstat syscall-table hooks cannot be
-  installed and the init.rc injection path is unavailable; ksud reports this
-  with a warning instead of failing silently.
-
 This branch is fork-local. Do not open a combined pull request to upstream.

@@ -12,7 +12,6 @@
 
 #include "adb_root.h"
 #include "arch.h"
-#include "exec_args.h"
 #include "policy/feature.h"
 #include "selinux/selinux.h"
 
@@ -181,10 +180,8 @@ static long do_ksu_adb_root_handle_execve(const char __user *filename_user, stru
 long ksu_adb_root_handle_execve(struct pt_regs *regs)
 {
     if (static_branch_unlikely(&ksu_adb_root)) {
-	const struct exec_args args = ksu_exec_args_from_regs(regs, false);
-
-	return do_ksu_adb_root_handle_execve(args.filename, regs,
-					     ksu_exec_envp_slot(regs, false));
+        return do_ksu_adb_root_handle_execve((const char __user *)PT_REGS_PARM1(regs), regs,
+                                             (unsigned long *)&PT_REGS_PARM3(regs));
     }
     return 0;
 }
@@ -192,10 +189,8 @@ long ksu_adb_root_handle_execve(struct pt_regs *regs)
 long ksu_adb_root_handle_execveat(struct pt_regs *regs)
 {
     if (static_branch_unlikely(&ksu_adb_root)) {
-	const struct exec_args args = ksu_exec_args_from_regs(regs, true);
-
-	return do_ksu_adb_root_handle_execve(args.filename, regs,
-					     ksu_exec_envp_slot(regs, true));
+        return do_ksu_adb_root_handle_execve((const char __user *)PT_REGS_PARM2(regs), regs,
+                                             (unsigned long *)&PT_REGS_SYSCALL_PARM4(regs));
     }
     return 0;
 }

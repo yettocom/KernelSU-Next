@@ -195,7 +195,7 @@ pub fn stage_daemon() -> Result<()> {
     // /system/bin/logcat before exec'ing it, so current_exe() can point at
     // that read-only bind mount. Prefer the helper's pre-staged copy when
     // it exists; normal installs keep the previous behavior.
-    let pre_staged = PathBuf::from(defs::DAEMON_STAGE_PATH);
+    let pre_staged = PathBuf::from("/data/local/tmp/.ksud-stage");
     let current_exe = if pre_staged.is_file() {
         pre_staged
     } else {

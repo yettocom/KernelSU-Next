@@ -181,10 +181,6 @@ int escape_with_root_profile(void)
     setup_groups(profile, cred);
     setup_selinux(profile->selinux_domain, cred);
 
-	/* uid/euid/fsuid become 0 on this path, so the credential must be installed
-	 * through KDP: the kernel keeps a read-only copy of it and the task's PGD is
-	 * switched to the matching one.
-	 */
 	ret = ksu_samsung_kdp_commit_creds(cred);
 	if (ret) {
 		pr_err("Samsung KDP credential install failed: %d\n", ret);
@@ -221,10 +217,6 @@ void escape_to_root_for_init(void)
         return;
     }
 
-	/* Only the SELinux domain changes here (init already runs as uid 0), so this
-	 * path deliberately stays on commit_creds() instead of the KDP read-only
-	 * install used by the uid-changing escape paths.
-	 */
 	setup_selinux(KERNEL_SU_CONTEXT, cred);
 	commit_creds(cred);
 	ksu_samsung_defex_sync_current();
