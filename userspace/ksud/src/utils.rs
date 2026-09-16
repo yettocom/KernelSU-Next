@@ -1,6 +1,7 @@
 use anyhow::{Context, Error, Ok, Result, bail};
-use rustix::fs::{Mode, OFlags, open};
+use rustix::fs::{Mode, OFlags, chown, open};
 use rustix::process::setpgid;
+use rustix::thread::{Gid, Uid};
 use rustix::stdio::{dup2_stderr, dup2_stdin, dup2_stdout};
 use std::{
     fs::{File, OpenOptions, create_dir_all, remove_file, write},
@@ -191,40 +192,35 @@ fn link_ksud_to_bin() -> Result<()> {
 
 pub fn stage_daemon() -> Result<()> {
     ensure_dir_exists(defs::ADB_DIR)?;
-    // Samsung late-load helpers may bind-mount the downloaded ksud over
-    // /system/bin/logcat before exec'ing it, so current_exe() can point at
-    // that read-only bind mount. Prefer the helper's pre-staged copy when
-    // it exists; normal installs keep the previous behavior.
-    let pre_staged = PathBuf::from("/data/local/tmp/.ksud-stage");
-    let current_exe = if pre_staged.is_file() {
-        pre_staged
-    } else {
-        std::env::current_exe().context("Failed to get self exe path")?
-    };
-    let daemon = PathBuf::from(defs::DAEMON_PATH);
-    if current_exe == daemon {
-        return Ok(());
-    }
+    let _ = std::fs::remove_file(defs::DAEMON_PATH);
+    std::fs::copy(
+        // We should use /proc/self/exe, DO NOT resolve the real path
+        // So that if someone execute /data/adb/ksud install, ksud won't be removed unexpectedly
+        "/proc/self/exe",
+        defs::DAEMON_PATH,
+    )?;
 
-    let staged = PathBuf::from(format!("{}.stage", defs::DAEMON_PATH));
-    let _ = std::fs::remove_file(&staged);
-    std::fs::copy(&current_exe, &staged).with_context(|| {
+    Ok(())
+}
+
+/// Stage the daemon from the copy the deployment helper already placed on the
+/// device. The file is moved into place with rename(), so it never has to be
+/// read back through the path it was exec'ed from (SELinux/DEFEX refuse that
+/// for the late-load bind mount) and no intermediate file is created.
+pub fn stage_daemon_from(staged_exe: impl AsRef<Path>) -> Result<()> {
+    ensure_dir_exists(defs::ADB_DIR)?;
+
+    std::fs::rename(staged_exe.as_ref(), defs::DAEMON_PATH).with_context(|| {
         format!(
-            "Failed to stage {} as {}",
-            current_exe.display(),
-            staged.display()
+            "Failed to rename {} to {}",
+            staged_exe.as_ref().display(),
+            defs::DAEMON_PATH
         )
     })?;
+    chown(defs::DAEMON_PATH, Some(Uid::ROOT), Some(Gid::ROOT))?;
     #[cfg(unix)]
-    set_permissions(&staged, Permissions::from_mode(0o755))?;
-    let _ = std::fs::remove_file(&daemon);
-    std::fs::rename(&staged, &daemon).with_context(|| {
-        format!(
-            "Failed to install staged daemon {} as {}",
-            staged.display(),
-            daemon.display()
-        )
-    })?;
+    set_permissions(defs::DAEMON_PATH, Permissions::from_mode(0o755))?;
+
     Ok(())
 }
 

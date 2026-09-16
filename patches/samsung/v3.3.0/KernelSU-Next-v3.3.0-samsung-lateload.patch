@@ -45,21 +45,35 @@ index 9f881966..3a0772f7 100644
  }
  
 diff --git a/userspace/ksud/src/late_load.rs b/userspace/ksud/src/late_load.rs
-index e8b34d3d..25a7ad23 100644
+index e8b34d3d..be18229b 100644
 --- a/userspace/ksud/src/late_load.rs
 +++ b/userspace/ksud/src/late_load.rs
-@@ -36,6 +36,10 @@ fn dump_process_info(label: &str) {
+@@ -1,7 +1,6 @@
+ use anyhow::{Context, Result};
+ use log::{info, warn};
+ use rustix::cstr;
+-use std::process::Command;
+ 
+ use crate::module::{handle_updated_modules, prune_modules};
+ use crate::{assets, defs, init_event, metamodule, restorecon, utils};
+@@ -35,11 +34,14 @@ fn dump_process_info(label: &str) {
+     );
  }
  
- pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Result<()> {
-+    // Stage the daemon while the loader still has its original credentials
-+    // and SELinux context. A late-loaded module can change both before the
-+    // normal install path gets a chance to copy the executable.
-+    utils::stage_daemon().context("Failed to stage ksud before late load")?;
-     utils::daemonize(false)?;
+-pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Result<()> {
+-    utils::daemonize(false)?;
++pub fn run(_package_name: &String, kmi: Option<String>, allow_shell: bool) -> Result<()> {
      info!("late-load command triggered!");
      dump_process_info("late-load start");
-@@ -79,7 +83,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
+ 
++    // Copy the daemon before loading the module changes this process's
++    // security context. The remaining install steps require KernelSU policy.
++    utils::stage_daemon_from("/data/local/tmp/.ksud-stage").context("Failed to stage ksud")?;
++
+     // 1. Check if KernelSU is already loaded
+     if ksuinit::has_kernelsu() {
+         info!("KernelSU already loaded, skip loading ko");
+@@ -79,7 +81,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
          warn!("clear temp configs failed: {e}");
      }
  
@@ -68,56 +82,73 @@ index e8b34d3d..25a7ad23 100644
  
      // 5. Handle module updates
      if let Err(e) = handle_updated_modules() {
+@@ -130,16 +132,5 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
+     // 13. Execute boot-completed stage scripts (non-blocking)
+     init_event::run_stage("boot-completed", false);
+ 
+-    // 14. Restart Manager so it gets a fresh ksu fd from the newly loaded kernel module
+-    info!("Restarting KernelSU Next Manager {package_name}...");
+-    let _ = Command::new("am").args(["force-stop", package_name]).status();
+-    let _ = Command::new("am")
+-        .args([
+-            "start",
+-            "-n",
+-            &format!("{package_name}/com.rifsxd.ksunext.ui.MainActivity"),
+-        ])
+-        .status();
+-
+     Ok(())
+ }
 diff --git a/userspace/ksud/src/utils.rs b/userspace/ksud/src/utils.rs
-index a43f1bc8..049ee1d7 100644
+index a43f1bc8..2333f6fe 100644
 --- a/userspace/ksud/src/utils.rs
 +++ b/userspace/ksud/src/utils.rs
-@@ -189,13 +189,46 @@ fn link_ksud_to_bin() -> Result<()> {
+@@ -1,6 +1,7 @@
+ use anyhow::{Context, Error, Ok, Result, bail};
+-use rustix::fs::{Mode, OFlags, open};
++use rustix::fs::{Mode, OFlags, chown, open};
+ use rustix::process::setpgid;
++use rustix::thread::{Gid, Uid};
+ use rustix::stdio::{dup2_stderr, dup2_stdin, dup2_stdout};
+ use std::{
+     fs::{File, OpenOptions, create_dir_all, remove_file, write},
+@@ -189,13 +190,41 @@ fn link_ksud_to_bin() -> Result<()> {
      Ok(())
  }
  
 -pub fn install(libadbroot: Option<PathBuf>) -> Result<()> {
 +pub fn stage_daemon() -> Result<()> {
      ensure_dir_exists(defs::ADB_DIR)?;
--    let _ = std::fs::remove_file(defs::DAEMON_PATH);
--    std::fs::copy(
+     let _ = std::fs::remove_file(defs::DAEMON_PATH);
+     std::fs::copy(
 -        std::env::current_exe().with_context(|| "Failed to get self exe path")?,
--        defs::DAEMON_PATH,
--    )?;
-+    // Samsung late-load helpers may bind-mount the downloaded ksud over
-+    // /system/bin/logcat before exec'ing it, so current_exe() can point at
-+    // that read-only bind mount. Prefer the helper's pre-staged copy when
-+    // it exists; normal installs keep the previous behavior.
-+    let pre_staged = PathBuf::from("/data/local/tmp/.ksud-stage");
-+    let current_exe = if pre_staged.is_file() {
-+        pre_staged
-+    } else {
-+        std::env::current_exe().context("Failed to get self exe path")?
-+    };
-+    let daemon = PathBuf::from(defs::DAEMON_PATH);
-+    if current_exe == daemon {
-+        return Ok(());
-+    }
++        // We should use /proc/self/exe, DO NOT resolve the real path
++        // So that if someone execute /data/adb/ksud install, ksud won't be removed unexpectedly
++        "/proc/self/exe",
+         defs::DAEMON_PATH,
+     )?;
 +
-+    let staged = PathBuf::from(format!("{}.stage", defs::DAEMON_PATH));
-+    let _ = std::fs::remove_file(&staged);
-+    std::fs::copy(&current_exe, &staged).with_context(|| {
++    Ok(())
++}
++
++/// Stage the daemon from the copy the deployment helper already placed on the
++/// device. The file is moved into place with rename(), so it never has to be
++/// read back through the path it was exec'ed from (SELinux/DEFEX refuse that
++/// for the late-load bind mount) and no intermediate file is created.
++pub fn stage_daemon_from(staged_exe: impl AsRef<Path>) -> Result<()> {
++    ensure_dir_exists(defs::ADB_DIR)?;
++
++    std::fs::rename(staged_exe.as_ref(), defs::DAEMON_PATH).with_context(|| {
 +        format!(
-+            "Failed to stage {} as {}",
-+            current_exe.display(),
-+            staged.display()
++            "Failed to rename {} to {}",
++            staged_exe.as_ref().display(),
++            defs::DAEMON_PATH
 +        )
 +    })?;
++    chown(defs::DAEMON_PATH, Some(Uid::ROOT), Some(Gid::ROOT))?;
 +    #[cfg(unix)]
-+    set_permissions(&staged, Permissions::from_mode(0o755))?;
-+    let _ = std::fs::remove_file(&daemon);
-+    std::fs::rename(&staged, &daemon).with_context(|| {
-+        format!(
-+            "Failed to install staged daemon {} as {}",
-+            staged.display(),
-+            daemon.display()
-+        )
-+    })?;
++    set_permissions(defs::DAEMON_PATH, Permissions::from_mode(0o755))?;
++
 +    Ok(())
 +}
 +
@@ -125,7 +156,7 @@ index a43f1bc8..049ee1d7 100644
      restorecon::lsetfilecon(defs::DAEMON_PATH, restorecon::KSU_CON)?;
      // install binary assets
      assets::ensure_binaries(false).with_context(|| "Failed to extract assets")?;
-@@ -211,6 +244,11 @@ pub fn install(libadbroot: Option<PathBuf>) -> Result<()> {
+@@ -211,6 +240,11 @@ pub fn install(libadbroot: Option<PathBuf>) -> Result<()> {
      Ok(())
  }
  

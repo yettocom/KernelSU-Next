@@ -15,17 +15,22 @@ below is for review only.
    Kernel-side SELinux status hiding through kprobes (no kernel text patching).
 
 3. KernelSU-Next-v3.3.0-samsung-lateload.patch
-   Userspace adaptation for the runtime (late-load) install path used on these
-   devices, plus the release version overrides.
+   ksud adaptation for the runtime (late-load) install path: stage_daemon_from()
+   moves the deployment helper's pre-staged copy into /data/adb/ksud with
+   rename(), stage_daemon() keeps the upstream /proc/self/exe copy for the CLI
+   install path, and late-load no longer daemonizes or restarts the manager.
+   Also carries the release version overrides.
 
 Applying all three reproduces the samsung branch head. The former combined
 compat+hide patch is no longer published.
 
 Runtime note for the late-load patch: the loader is executed through a
-/system/bin/logcat bind mount, so it cannot read itself back; the deployment
-helper or script must provide the copy at /data/local/tmp/.ksud-stage. Installs
-that do not use late-load never create that file, and the daemon is then staged
-from current_exe() exactly as upstream does.
+/system/bin/logcat bind mount and cannot read itself back, so the deployment
+helper or script must place the loader at /data/local/tmp/.ksud-stage before
+late-load starts. The file is moved into place with rename() and there is no
+fallback, so a missing file fails staging. The upstream manager restart no
+longer runs inside ksud, so the deployment has to (re)start the manager after
+late-load. Installs that never use late-load are unaffected.
 
 Build flags:
 
