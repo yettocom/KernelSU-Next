@@ -45,24 +45,10 @@ index 9f881966..3a0772f7 100644
  }
  
 diff --git a/userspace/ksud/src/late_load.rs b/userspace/ksud/src/late_load.rs
-index e8b34d3d..be18229b 100644
+index e8b34d3d..0ed85b0e 100644
 --- a/userspace/ksud/src/late_load.rs
 +++ b/userspace/ksud/src/late_load.rs
-@@ -1,7 +1,6 @@
- use anyhow::{Context, Result};
- use log::{info, warn};
- use rustix::cstr;
--use std::process::Command;
- 
- use crate::module::{handle_updated_modules, prune_modules};
- use crate::{assets, defs, init_event, metamodule, restorecon, utils};
-@@ -35,11 +34,14 @@ fn dump_process_info(label: &str) {
-     );
- }
- 
--pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Result<()> {
--    utils::daemonize(false)?;
-+pub fn run(_package_name: &String, kmi: Option<String>, allow_shell: bool) -> Result<()> {
+@@ -40,6 +40,10 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
      info!("late-load command triggered!");
      dump_process_info("late-load start");
  
@@ -73,7 +59,7 @@ index e8b34d3d..be18229b 100644
      // 1. Check if KernelSU is already loaded
      if ksuinit::has_kernelsu() {
          info!("KernelSU already loaded, skip loading ko");
-@@ -79,7 +81,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
+@@ -79,7 +83,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
          warn!("clear temp configs failed: {e}");
      }
  
@@ -82,23 +68,6 @@ index e8b34d3d..be18229b 100644
  
      // 5. Handle module updates
      if let Err(e) = handle_updated_modules() {
-@@ -130,16 +132,5 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
-     // 13. Execute boot-completed stage scripts (non-blocking)
-     init_event::run_stage("boot-completed", false);
- 
--    // 14. Restart Manager so it gets a fresh ksu fd from the newly loaded kernel module
--    info!("Restarting KernelSU Next Manager {package_name}...");
--    let _ = Command::new("am").args(["force-stop", package_name]).status();
--    let _ = Command::new("am")
--        .args([
--            "start",
--            "-n",
--            &format!("{package_name}/com.rifsxd.ksunext.ui.MainActivity"),
--        ])
--        .status();
--
-     Ok(())
- }
 diff --git a/userspace/ksud/src/utils.rs b/userspace/ksud/src/utils.rs
 index a43f1bc8..2333f6fe 100644
 --- a/userspace/ksud/src/utils.rs
