@@ -289,6 +289,9 @@ pub fn daemonize_with<F: FnOnce() -> Result<()>>(use_init_pgrp: bool, configure:
     Ok(())
 }
 
+// The Samsung late-load path must not daemonize. Keep this helper available
+// for other callers without emitting a dead-code warning.
+#[allow(dead_code)]
 pub fn daemonize(use_init_pgrp: bool) -> Result<()> {
     daemonize_with(use_init_pgrp, || Ok(()))
 }

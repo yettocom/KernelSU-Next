@@ -35,11 +35,22 @@ fn dump_process_info(label: &str) {
     );
 }
 
+const NEXT_MANAGER_PACKAGE: &str = "com.rifsxd.ksunext";
+
+fn resolve_manager_package(package_name: &str) -> &str {
+    if package_name == "me.weishu.kernelsu" {
+        NEXT_MANAGER_PACKAGE
+    } else {
+        package_name
+    }
+}
+
 pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Result<()> {
-    utils::daemonize(false)?;
     info!("late-load command triggered!");
     dump_process_info("late-load start");
 
+    // Do not daemonize in this late-load path. The Samsung deployment helper
+    // waits for this process and then performs a single KernelSU control check.
     // Copy the daemon before loading the module changes this process's
     // security context. The remaining install steps require KernelSU policy.
     utils::stage_daemon_from("/data/local/tmp/.ksud-stage").context("Failed to stage ksud")?;
@@ -134,14 +145,19 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     // 13. Execute boot-completed stage scripts (non-blocking)
     init_event::run_stage("boot-completed", false);
 
-    // 14. Restart Manager so it gets a fresh ksu fd from the newly loaded kernel module
-    info!("Restarting KernelSU Next Manager {package_name}...");
-    let _ = Command::new("am").args(["force-stop", package_name]).status();
+    // 14. Restart Manager so it gets a fresh ksu fd from the newly loaded kernel module.
+    // Older Samsung helpers pass the legacy KernelSU package name; normalize it
+    // to the package used by this KernelSU-Next Manager build.
+    let manager_package = resolve_manager_package(package_name);
+    info!("Restarting KernelSU Next Manager {manager_package}...");
+    let _ = Command::new("am")
+        .args(["force-stop", manager_package])
+        .status();
     let _ = Command::new("am")
         .args([
             "start",
             "-n",
-            &format!("{package_name}/com.rifsxd.ksunext.ui.MainActivity"),
+            &format!("{manager_package}/com.rifsxd.ksunext.ui.MainActivity"),
         ])
         .status();
 

@@ -16,13 +16,17 @@ below is for review only.
    Kernel-side SELinux status hiding through kprobes (no kernel text patching).
 
 3. KernelSU-Next-v3.3.0-samsung-lateload.patch
-   ksud adaptation for the runtime (late-load) install path. It keeps the
-   upstream stable control flow, including `utils::daemonize(false)` and the
-   final Manager restart, while adding the Samsung-compatible staging path:
+   ksud adaptation for the runtime (late-load) install path. It intentionally
+   does not daemonize this path: the Samsung deployment helper waits for the
+   loader and performs a single KernelSU control check, so the loader must stay
+   alive until module loading and installation complete. It adds the
+   Samsung-compatible staging path:
    `stage_daemon_from("/data/local/tmp/.ksud-stage")` moves the helper's
    pre-staged copy into `/data/adb/ksud` with `rename()`. The ordinary CLI
    install path keeps upstream `stage_daemon()` / `/proc/self/exe` behavior.
-   This patch also carries the release version overrides.
+   The final Manager restart normalizes the legacy `me.weishu.kernelsu`
+   package name to `com.rifsxd.ksunext`. This patch also carries the release
+   version overrides.
 
 Applying all three reproduces the samsung branch head. The former combined
 compat+hide patch is no longer published.
@@ -31,9 +35,11 @@ Runtime note for the late-load patch: the loader is executed through a
 `/system/bin/logcat` bind mount and cannot read itself back, so the deployment
 helper or script must place the loader at `/data/local/tmp/.ksud-stage` before
 late-load starts. The file is moved into place with `rename()` and there is no
-fallback, so a missing file fails staging. Staging happens before the kernel
-module is loaded. The upstream Manager restart then runs inside ksud after the
-late-load stages complete. Installs that never use late-load are unaffected.
+fallback, so a missing file fails staging. The loader does not daemonize; it
+stays alive through module loading and the installation stages so the helper's
+single post-exit control check is reliable. The Manager restart runs at the end
+with `com.rifsxd.ksunext`, including for older helpers that pass the legacy
+`me.weishu.kernelsu` name. Installs that never use late-load are unaffected.
 
 The compat patch keeps the six Samsung syscall hooks
 (`execve`, `execveat`, `newfstatat`, `faccessat`, `statx`, `faccessat2`) and
@@ -57,6 +63,6 @@ Patch SHA256:
 
 1652153153B526A294AB1F70FA71648908332AE8144C9EAB2CF086D85A3BD6AD  compat
 9BA2858B98059B499B7659E3782C205CD668300E469AA35B7EE5A5CFEDB4CC60  selinux_hide
-F135544426B296850B8AC1AC2561191CE17B15BFE981C47ED612C2012345C3BF  lateload
+28F8EDE52BF352530D4D6AEC0CEB01848E1AF72934AC67B0667303DEE0146751  lateload
 
 This branch is fork-local. Do not open a combined pull request to upstream.

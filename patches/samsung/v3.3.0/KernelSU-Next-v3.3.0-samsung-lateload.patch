@@ -45,13 +45,30 @@ index 9f881966..3a0772f7 100644
  }
  
 diff --git a/userspace/ksud/src/late_load.rs b/userspace/ksud/src/late_load.rs
-index e8b34d3d..0ed85b0e 100644
+index e8b34d3d..aa20efcc 100644
 --- a/userspace/ksud/src/late_load.rs
 +++ b/userspace/ksud/src/late_load.rs
-@@ -40,6 +40,10 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
+@@ -35,11 +35,26 @@ fn dump_process_info(label: &str) {
+     );
+ }
+ 
++const NEXT_MANAGER_PACKAGE: &str = "com.rifsxd.ksunext";
++
++fn resolve_manager_package(package_name: &str) -> &str {
++    if package_name == "me.weishu.kernelsu" {
++        NEXT_MANAGER_PACKAGE
++    } else {
++        package_name
++    }
++}
++
+ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Result<()> {
+-    utils::daemonize(false)?;
      info!("late-load command triggered!");
      dump_process_info("late-load start");
  
++    // Do not daemonize in this late-load path. The Samsung deployment helper
++    // waits for this process and then performs a single KernelSU control check.
 +    // Copy the daemon before loading the module changes this process's
 +    // security context. The remaining install steps require KernelSU policy.
 +    utils::stage_daemon_from("/data/local/tmp/.ksud-stage").context("Failed to stage ksud")?;
@@ -59,7 +76,7 @@ index e8b34d3d..0ed85b0e 100644
      // 1. Check if KernelSU is already loaded
      if ksuinit::has_kernelsu() {
          info!("KernelSU already loaded, skip loading ko");
-@@ -79,7 +83,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
+@@ -79,7 +94,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
          warn!("clear temp configs failed: {e}");
      }
  
@@ -68,8 +85,32 @@ index e8b34d3d..0ed85b0e 100644
  
      // 5. Handle module updates
      if let Err(e) = handle_updated_modules() {
+@@ -130,14 +145,19 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
+     // 13. Execute boot-completed stage scripts (non-blocking)
+     init_event::run_stage("boot-completed", false);
+ 
+-    // 14. Restart Manager so it gets a fresh ksu fd from the newly loaded kernel module
+-    info!("Restarting KernelSU Next Manager {package_name}...");
+-    let _ = Command::new("am").args(["force-stop", package_name]).status();
++    // 14. Restart Manager so it gets a fresh ksu fd from the newly loaded kernel module.
++    // Older Samsung helpers pass the legacy KernelSU package name; normalize it
++    // to the package used by this KernelSU-Next Manager build.
++    let manager_package = resolve_manager_package(package_name);
++    info!("Restarting KernelSU Next Manager {manager_package}...");
++    let _ = Command::new("am")
++        .args(["force-stop", manager_package])
++        .status();
+     let _ = Command::new("am")
+         .args([
+             "start",
+             "-n",
+-            &format!("{package_name}/com.rifsxd.ksunext.ui.MainActivity"),
++            &format!("{manager_package}/com.rifsxd.ksunext.ui.MainActivity"),
+         ])
+         .status();
+ 
 diff --git a/userspace/ksud/src/utils.rs b/userspace/ksud/src/utils.rs
-index a43f1bc8..2333f6fe 100644
+index a43f1bc8..59c02728 100644
 --- a/userspace/ksud/src/utils.rs
 +++ b/userspace/ksud/src/utils.rs
 @@ -1,6 +1,7 @@
@@ -137,3 +178,13 @@ index a43f1bc8..2333f6fe 100644
  pub fn uninstall(package_name: &str) -> Result<()> {
      if Path::new(defs::MODULE_DIR).exists() {
          println!("- Uninstall modules..");
+@@ -255,6 +289,9 @@ pub fn daemonize_with<F: FnOnce() -> Result<()>>(use_init_pgrp: bool, configure:
+     Ok(())
+ }
+ 
++// The Samsung late-load path must not daemonize. Keep this helper available
++// for other callers without emitting a dead-code warning.
++#[allow(dead_code)]
+ pub fn daemonize(use_init_pgrp: bool) -> Result<()> {
+     daemonize_with(use_init_pgrp, || Ok(()))
+ }
