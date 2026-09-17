@@ -24,9 +24,8 @@ below is for review only.
    `stage_daemon_from("/data/local/tmp/.ksud-stage")` moves the helper's
    pre-staged copy into `/data/adb/ksud` with `rename()`. The ordinary CLI
    install path keeps upstream `stage_daemon()` / `/proc/self/exe` behavior.
-   The final Manager restart normalizes the legacy `me.weishu.kernelsu`
-   package name to `com.rifsxd.ksunext`. This patch also carries the release
-   version overrides.
+   The final Manager restart uses the package name supplied by the caller.
+   This patch also carries the release version overrides.
 
 Applying all three reproduces the samsung branch head. The former combined
 compat+hide patch is no longer published.
@@ -37,9 +36,9 @@ helper or script must place the loader at `/data/local/tmp/.ksud-stage` before
 late-load starts. The file is moved into place with `rename()` and there is no
 fallback, so a missing file fails staging. The loader does not daemonize; it
 stays alive through module loading and the installation stages so the helper's
-single post-exit control check is reliable. The Manager restart runs at the end
-with `com.rifsxd.ksunext`, including for older helpers that pass the legacy
-`me.weishu.kernelsu` name. Installs that never use late-load are unaffected.
+single post-exit control check is reliable. The Manager restart at the end
+uses the caller-supplied package name. Installs that never use late-load are
+unaffected.
 
 The compat patch keeps the six Samsung syscall hooks
 (`execve`, `execveat`, `newfstatat`, `faccessat`, `statx`, `faccessat2`) and
@@ -63,6 +62,6 @@ Patch SHA256:
 
 1652153153B526A294AB1F70FA71648908332AE8144C9EAB2CF086D85A3BD6AD  compat
 9BA2858B98059B499B7659E3782C205CD668300E469AA35B7EE5A5CFEDB4CC60  selinux_hide
-28F8EDE52BF352530D4D6AEC0CEB01848E1AF72934AC67B0667303DEE0146751  lateload
+E1F4470242BA4C0A064BE36A424384AB66E75FEA1C202249712C8EA280434B70  lateload
 
 This branch is fork-local. Do not open a combined pull request to upstream.
