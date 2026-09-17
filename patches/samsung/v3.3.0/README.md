@@ -65,3 +65,17 @@ Patch SHA256:
 E1F4470242BA4C0A064BE36A424384AB66E75FEA1C202249712C8EA280434B70  lateload
 
 This branch is fork-local. Do not open a combined pull request to upstream.
+
+## Revision notes (2026-09-17)
+
+- The Samsung late-load path does not daemonize. The deployment helper waits
+  for this process and performs one KernelSU control check, so the loader must
+  remain alive until module loading and installation complete.
+- Staging remains an atomic rename from `/data/local/tmp/.ksud-stage` to
+  `/data/adb/ksud`.
+- The legacy package-name remap was removed. The Manager restart uses the
+  caller-supplied `package_name`; the 25U deployment scripts check and start
+  `com.rifsxd.ksunext` after installation.
+- No root-helper source is changed by this patch set.
+- Reversibility: applying the three patches to `3b18216f` and then reverse-
+  applying them leaves the source tree clean.
