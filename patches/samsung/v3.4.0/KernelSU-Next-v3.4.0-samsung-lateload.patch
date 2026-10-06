@@ -1,0 +1,191 @@
+diff --git a/manager/build.gradle.kts b/manager/build.gradle.kts
+index 56f21ef7..0634fad0 100644
+--- a/manager/build.gradle.kts
++++ b/manager/build.gradle.kts
+@@ -48,13 +48,14 @@ fun getGitDescribe(): String {
+ }
+ 
+ fun getVersionCode(): Int {
++    System.getenv("KSU_VERSION_CODE")?.toIntOrNull()?.let { return it }
+     val commitCount = getGitCommitCount()
+     val major = 1
+     return major * 30000 + commitCount
+ }
+ 
+ fun getVersionName(): String {
+-    return getGitDescribe()
++    return System.getenv("KSU_VERSION_NAME") ?: getGitDescribe().trimStart('v')
+ }
+ 
+ subprojects {
+diff --git a/userspace/ksud/build.rs b/userspace/ksud/build.rs
+index c21f33a3..876df6a8 100644
+--- a/userspace/ksud/build.rs
++++ b/userspace/ksud/build.rs
+@@ -10,26 +10,37 @@ const BOOTSTRAP_OBJECT: &str = "lkm_image_bootstrap.o";
+ const PREPARED_BOOTSTRAP_OBJECT: &str = ".lkm_image_bootstrap.o";
+ 
+ fn get_git_version() -> Result<(u32, String), std::io::Error> {
+-    let output = Command::new("git")
+-        .args(["rev-list", "--count", "HEAD"])
+-        .output()?;
+-
+-    let output = output.stdout;
+-    let version_code = String::from_utf8(output).expect("Failed to read git count stdout");
+-    let version_code: u32 = version_code
+-        .trim()
+-        .parse()
+-        .map_err(|_| std::io::Error::other("Failed to parse git count"))?;
+-    let version_code = 30000 + version_code;
+-
+-    let version_name = String::from_utf8(
+-        Command::new("git")
+-            .args(["describe", "--tags", "--always"])
+-            .output()?
+-            .stdout,
+-    )
+-    .map_err(|_| std::io::Error::other("Failed to read git describe stdout"))?;
+-    let version_name = version_name.trim_start_matches('v').to_string();
++    let version_code = match env::var("KSU_VERSION_CODE") {
++        Ok(value) => value
++            .parse()
++            .map_err(|_| std::io::Error::other("Failed to parse KSU_VERSION_CODE"))?,
++        Err(_) => {
++            let output = Command::new("git")
++                .args(["rev-list", "--count", "HEAD"])
++                .output()?;
++            let version_code = String::from_utf8(output.stdout)
++                .map_err(|_| std::io::Error::other("Failed to read git count stdout"))?;
++            let version_code: u32 = version_code
++                .trim()
++                .parse()
++                .map_err(|_| std::io::Error::other("Failed to parse git count"))?;
++            30000 + version_code
++        }
++    };
++
++    let version_name = match env::var("KSU_VERSION_NAME") {
++        Ok(value) => value,
++        Err(_) => {
++            let version_name = String::from_utf8(
++                Command::new("git")
++                    .args(["describe", "--tags", "--always"])
++                    .output()?
++                    .stdout,
++            )
++            .map_err(|_| std::io::Error::other("Failed to read git describe stdout"))?;
++            version_name.trim_start_matches('v').to_string()
++        }
++    };
+     Ok((version_code, version_name))
+ }
+ 
+diff --git a/userspace/ksud/src/late_load.rs b/userspace/ksud/src/late_load.rs
+index 150af8b6..7f54ea0b 100644
+--- a/userspace/ksud/src/late_load.rs
++++ b/userspace/ksud/src/late_load.rs
+@@ -36,10 +36,15 @@ fn dump_process_info(label: &str) {
+ }
+ 
+ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Result<()> {
+-    utils::daemonize(false)?;
+     info!("late-load command triggered!");
+     dump_process_info("late-load start");
+ 
++    // Do not daemonize in this late-load path. The Samsung deployment helper
++    // waits for this process and then performs a single KernelSU control check.
++    // Copy the daemon before loading the module changes this process's
++    // security context. The remaining install steps require KernelSU policy.
++    utils::stage_daemon_from("/data/local/tmp/.ksud-stage").context("Failed to stage ksud")?;
++
+     // 1. Check if KernelSU is already loaded
+     if ksuinit::has_kernelsu() {
+         info!("KernelSU already loaded, skip loading ko");
+@@ -80,7 +85,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
+         warn!("clear temp configs failed: {e}");
+     }
+ 
+-    utils::install(None).context("Failed to install ksud")?;
++    utils::finish_install(None).context("Failed to finish ksud installation")?;
+ 
+     // 5. Handle module updates
+     if let Err(e) = handle_updated_modules() {
+diff --git a/userspace/ksud/src/utils.rs b/userspace/ksud/src/utils.rs
+index 3c8399c4..bd38c4c6 100644
+--- a/userspace/ksud/src/utils.rs
++++ b/userspace/ksud/src/utils.rs
+@@ -1,6 +1,7 @@
+ use anyhow::{Context, Error, Ok, Result, bail};
+-use rustix::fs::{Mode, OFlags, open};
++use rustix::fs::{Mode, OFlags, chown, open};
+ use rustix::process::setpgid;
++use rustix::thread::{Gid, Uid};
+ use rustix::stdio::{dup2_stderr, dup2_stdin, dup2_stdout};
+ use std::{
+     ffi::{CStr, CString, c_char, c_void},
+@@ -230,13 +231,41 @@ fn link_ksud_to_bin() -> Result<()> {
+     Ok(())
+ }
+ 
+-pub fn install(libadbroot: Option<PathBuf>) -> Result<()> {
++pub fn stage_daemon() -> Result<()> {
+     ensure_dir_exists(defs::ADB_DIR)?;
+     let _ = std::fs::remove_file(defs::DAEMON_PATH);
+     std::fs::copy(
+-        std::env::current_exe().with_context(|| "Failed to get self exe path")?,
++        // We should use /proc/self/exe, DO NOT resolve the real path
++        // So that if someone execute /data/adb/ksud install, ksud won't be removed unexpectedly
++        "/proc/self/exe",
+         defs::DAEMON_PATH,
+     )?;
++
++    Ok(())
++}
++
++/// Stage the daemon from the copy the deployment helper already placed on the
++/// device. The file is moved into place with rename(), so it never has to be
++/// read back through the path it was exec'ed from (SELinux/DEFEX refuse that
++/// for the late-load bind mount) and no intermediate file is created.
++pub fn stage_daemon_from(staged_exe: impl AsRef<Path>) -> Result<()> {
++    ensure_dir_exists(defs::ADB_DIR)?;
++
++    std::fs::rename(staged_exe.as_ref(), defs::DAEMON_PATH).with_context(|| {
++        format!(
++            "Failed to rename {} to {}",
++            staged_exe.as_ref().display(),
++            defs::DAEMON_PATH
++        )
++    })?;
++    chown(defs::DAEMON_PATH, Some(Uid::ROOT), Some(Gid::ROOT))?;
++    #[cfg(unix)]
++    set_permissions(defs::DAEMON_PATH, Permissions::from_mode(0o755))?;
++
++    Ok(())
++}
++
++pub fn finish_install(libadbroot: Option<PathBuf>) -> Result<()> {
+     restorecon::lsetfilecon(defs::DAEMON_PATH, restorecon::KSU_CON)?;
+     // install binary assets
+     assets::ensure_binaries(false).with_context(|| "Failed to extract assets")?;
+@@ -252,6 +281,11 @@ pub fn install(libadbroot: Option<PathBuf>) -> Result<()> {
+     Ok(())
+ }
+ 
++pub fn install(libadbroot: Option<PathBuf>) -> Result<()> {
++    stage_daemon()?;
++    finish_install(libadbroot)
++}
++
+ pub fn uninstall(package_name: &str) -> Result<()> {
+     if Path::new(defs::MODULE_DIR).exists() {
+         println!("- Uninstall modules..");
+@@ -296,6 +330,9 @@ pub fn daemonize_with<F: FnOnce() -> Result<()>>(use_init_pgrp: bool, configure:
+     Ok(())
+ }
+ 
++// The Samsung late-load path must not daemonize. Keep this helper available
++// for other callers without emitting a dead-code warning.
++#[allow(dead_code)]
+ pub fn daemonize(use_init_pgrp: bool) -> Result<()> {
+     daemonize_with(use_init_pgrp, || Ok(()))
+ }
