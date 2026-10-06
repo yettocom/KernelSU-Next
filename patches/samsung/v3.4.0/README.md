@@ -15,9 +15,11 @@ to the current `dev` unchanged.
 Location: the same files are stored in two places, byte for byte identical -
 the working copy at `D:\root\patch\ksu-next\`, and the fork
 `yettocom/KernelSU-Next` at `patches/samsung/v3.4.0/` on branch `samsung`.
-That branch also carries the content in its tree (tip `8ce9981e`, "kernel: add
-Samsung KDP/RKP/DEFEX late-load support for v3.4.0"), so a release build can
+That branch also carries the content in its tree (commit `8ce9981e`, "kernel:
+add Samsung KDP/RKP/DEFEX late-load support for v3.4.0"), so a release build can
 either apply these patches to a clean `v3.4.0` tree or check out the branch.
+`.gitattributes` pins `*.patch` to LF, so the stored patches stay applicable
+from a Windows checkout as well.
 
 The fork keeps exactly two branches: `dev` follows `upstream/dev`, and
 `samsung` is this line. The retired v3.3.0 line is no longer a branch; its
